@@ -449,8 +449,19 @@ h2 {
   min-width: 0;
 }
 
+.continue-rail {
+  display: flex;
+  gap: 0.9rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.1rem 0 0.7rem;
+  scroll-snap-type: x proximity;
+  scrollbar-color: var(--line) transparent;
+}
+
 .continue-button {
-  width: min(38rem, 100%);
+  width: clamp(15.5rem, 30vw, 21rem);
+  flex: 0 0 clamp(15.5rem, 30vw, 21rem);
   display: grid;
   gap: 0.75rem;
   padding: 0;
@@ -458,6 +469,7 @@ h2 {
   text-align: left;
   border: 1px solid var(--line);
   background: var(--panel-2);
+  scroll-snap-align: start;
 }
 
 .continue-thumb-wrap {
@@ -487,9 +499,12 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+.continue-episode,
 .continue-time {
   color: var(--muted);
   font-size: 0.92rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 video {
@@ -498,6 +513,37 @@ video {
   border-radius: 16px;
   background: #000;
   border: 1px solid var(--line);
+}
+
+.player-controls {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.7rem;
+  margin-top: 0.9rem;
+}
+
+.player-control {
+  width: 3rem;
+  height: 3rem;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.player-control.primary {
+  width: 3.4rem;
+  height: 3.4rem;
+  border-color: transparent;
+}
+
+.player-control:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .menu-video-button,
@@ -561,7 +607,8 @@ video {
   }
 
   .continue-button {
-    width: 100%;
+    width: min(78vw, 20rem);
+    flex-basis: min(78vw, 20rem);
   }
 
   .player-heading,

@@ -6,6 +6,7 @@ const state = {
   loadingTitleId: null,
   loadingChapterId: null,
   continueItem: null,
+  continueItems: [],
   continueLoading: false,
   continueError: '',
   titles: [],
@@ -52,6 +53,10 @@ const profileNameInput = document.getElementById('profileNameInput');
 const profileButton = document.getElementById('profileButton');
 const profileButtonAvatar = document.getElementById('profileButtonAvatar');
 const profileButtonName = document.getElementById('profileButtonName');
+const previousButton = document.getElementById('previousButton');
+const playPauseButton = document.getElementById('playPauseButton');
+const playPauseIcon = document.getElementById('playPauseIcon');
+const nextButton = document.getElementById('nextButton');
 
 function escapeHtml(value) {
   return String(value)
@@ -80,6 +85,27 @@ function withProfile(url) {
 function mediaUrl(videoId, time = 0) {
   const seconds = Math.max(0, Math.floor(Number(time) || 0));
   return `/media/${encodeURIComponent(videoId)}#t=${seconds}`;
+}
+
+function unloadVideoElement(element) {
+  if (!element) return;
+  try {
+    element.pause();
+  } catch (_) {}
+  element.removeAttribute('src');
+  try {
+    element.load();
+  } catch (_) {}
+}
+
+function unloadContinueThumbnail() {
+  continueWatching.querySelectorAll('video').forEach(unloadVideoElement);
+}
+
+function setContinueMessage(message) {
+  unloadContinueThumbnail();
+  continueWatching.className = 'continue-watch empty-state';
+  continueWatching.textContent = message;
 }
 
 function showStatus(message, isError = false) {
@@ -162,8 +188,11 @@ function hideProfileGate() {
 }
 
 function clearPlayback() {
-  videoPlayer.pause();
-  videoPlayer.removeAttribute('src');
+  if (state.currentVideo) {
+    const time = Number.isFinite(videoPlayer.currentTime) ? videoPlayer.currentTime : 0;
+    const duration = Number.isFinite(videoPlayer.duration) ? videoPlayer.duration : 0;
+    saveProgress(true, false, time, duration);
+  }
 
   state.currentVideo = null;
   state.playingTitle = null;
@@ -171,6 +200,8 @@ function clearPlayback() {
   state.playingVideos = [];
   state.playingChapters = [];
   state.lastSaveAt = 0;
+
+  unloadVideoElement(videoPlayer);
 
   nowPlaying.textContent = 'Select a video';
   playbackMeta.textContent = '';
@@ -429,6 +460,50 @@ function renderSidebar() {
   }).join('');
 }
 
+function focusPlayingEpisodeInSidebar() {
+  if (!state.sidebarOpen || !state.currentVideo?.id || !state.playingTitle?.id) return;
+
+  requestAnimationFrame(() => {
+    const episodeButton = [...sidebarList.querySelectorAll('[data-video-id]')]
+      .find((button) => button.dataset.videoId === state.currentVideo.id);
+    const titleButton = [...sidebarList.querySelectorAll('[data-title-id]')]
+      .find((button) => button.dataset.titleId === state.playingTitle.id);
+    const targetButton = episodeButton || titleButton;
+    if (!targetButton) return;
+
+    try {
+      targetButton.focus({ preventScroll: true });
+    } catch (_) {
+      targetButton.focus();
+    }
+    targetButton.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
+  });
+}
+
+async function openLibraryFocusedOnPlayingEpisode() {
+  state.sidebarOpen = true;
+
+  if (!state.currentVideo || !state.playingTitle?.id) {
+    renderSidebar();
+    return;
+  }
+
+  const needsTitleLoad = state.currentTitle?.id !== state.playingTitle.id
+    || (state.playingTitle.type === 'series' ? !state.chapters.length : !state.videos.length);
+  if (needsTitleLoad) {
+    await selectTitle(state.playingTitle.id);
+  }
+
+  if (state.playingTitle.type === 'series' && state.playingChapter?.id) {
+    if (state.currentChapter?.id !== state.playingChapter.id || !state.videos.length) {
+      await selectChapter(state.playingChapter.id);
+    }
+  }
+
+  renderSidebar();
+  focusPlayingEpisodeInSidebar();
+}
+
 function renderTitleView() {
   if (!state.currentTitle) {
     state.view = 'library';
@@ -538,55 +613,64 @@ function renderVideoButtons(videos, emptyMessage) {
 
 function renderContinueWatching() {
   if (state.currentVideo) {
+    unloadContinueThumbnail();
+    continueWatching.textContent = '';
     continueSection.classList.add('hidden');
     return;
   }
   continueSection.classList.remove('hidden');
 
   if (!state.currentProfile) {
-    continueWatching.className = 'continue-watch empty-state';
-    continueWatching.textContent = 'Choose a profile.';
+    setContinueMessage('Choose a profile.');
     return;
   }
 
   if (state.continueLoading) {
-    continueWatching.className = 'continue-watch empty-state';
-    continueWatching.textContent = 'Loading saved place...';
+    setContinueMessage('Loading saved place...');
     return;
   }
 
   if (state.continueError) {
-    continueWatching.className = 'continue-watch empty-state';
-    continueWatching.textContent = state.continueError;
+    setContinueMessage(state.continueError);
     return;
   }
 
-  const item = state.continueItem;
-  if (!item?.video?.id) {
-    continueWatching.className = 'continue-watch empty-state';
-    continueWatching.textContent = 'Nothing to continue yet.';
+  const items = state.continueItems.length
+    ? state.continueItems
+    : state.continueItem ? [state.continueItem] : [];
+  if (!items.length) {
+    setContinueMessage('Nothing to continue yet.');
     return;
   }
 
-  const progress = item.progress || item.resume || {};
-  const time = Number(progress.time) || 0;
-  const duration = Number(progress.duration) || 0;
-  const progressText = duration > 0
-    ? `${formatTime(time)} / ${formatTime(duration)}`
-    : time > 0 ? formatTime(time) : 'Ready to resume';
-  const titleName = item.title?.name || 'Saved video';
-
+  unloadContinueThumbnail();
   continueWatching.className = 'continue-watch';
   continueWatching.innerHTML = `
-    <button class="continue-button" type="button" data-continue-watch="true">
-      <span class="continue-thumb-wrap">
-        <video class="continue-thumbnail" muted preload="metadata" playsinline src="${escapeHtml(mediaUrl(item.video.id, time))}"></video>
-      </span>
-      <span class="continue-details">
-        <span class="continue-name">${escapeHtml(item.video.displayTitle || titleName)}</span>
-        <span class="continue-time">${escapeHtml(`${titleName} | ${progressText}`)}</span>
-      </span>
-    </button>
+    <div class="continue-rail">
+      ${items.map((item) => {
+        const progress = item.progress || item.resume || {};
+        const time = Number(progress.time) || 0;
+        const duration = Number(progress.duration) || 0;
+        const progressText = duration > 0
+          ? `${formatTime(time)} / ${formatTime(duration)}`
+          : time > 0 ? formatTime(time) : 'Ready to resume';
+        const titleName = item.title?.name || 'Saved title';
+        const episodeName = item.video?.displayTitle || item.video?.name || 'Saved video';
+        const detailParts = [episodeName, item.chapter?.name, progressText].filter(Boolean);
+
+        return `
+          <button class="continue-button" type="button" data-continue-watch="true" data-continue-title-id="${escapeHtml(item.resume.titleId)}">
+            <span class="continue-thumb-wrap">
+              <video class="continue-thumbnail" muted preload="metadata" playsinline src="${escapeHtml(mediaUrl(item.video.id, time))}"></video>
+            </span>
+            <span class="continue-details">
+              <span class="continue-name">${escapeHtml(titleName)}</span>
+              <span class="continue-episode">${escapeHtml(detailParts.join(' | '))}</span>
+            </span>
+          </button>
+        `;
+      }).join('')}
+    </div>
   `;
 }
 
@@ -595,8 +679,53 @@ function renderBrowser() {
   renderLibraryView();
 }
 
+function getCurrentPlaybackVideoIndex() {
+  if (!state.currentVideo) return -1;
+  return state.playingVideos.findIndex((video) => video.id === state.currentVideo.id);
+}
+
+function hasAdjacentChapter(direction) {
+  if (state.playingTitle?.type !== 'series' || !state.playingChapter || !state.playingChapters.length) {
+    return false;
+  }
+
+  const chapterIndex = state.playingChapters.findIndex((chapter) => chapter.id === state.playingChapter.id);
+  if (chapterIndex < 0) return false;
+
+  const chapters = direction < 0
+    ? state.playingChapters.slice(0, chapterIndex)
+    : state.playingChapters.slice(chapterIndex + 1);
+
+  return chapters.some((chapter) => chapter.videoCount !== 0);
+}
+
+function hasPreviousVideo() {
+  if (!state.currentVideo) return false;
+  const videoIndex = getCurrentPlaybackVideoIndex();
+  return videoIndex > 0 || hasAdjacentChapter(-1);
+}
+
+function hasNextVideo() {
+  if (!state.currentVideo) return false;
+  const videoIndex = getCurrentPlaybackVideoIndex();
+  return (videoIndex >= 0 && videoIndex < state.playingVideos.length - 1) || hasAdjacentChapter(1);
+}
+
+function renderPlayerControls() {
+  const hasVideo = Boolean(state.currentVideo);
+  previousButton.disabled = !hasVideo || !hasPreviousVideo();
+  playPauseButton.disabled = !hasVideo;
+  nextButton.disabled = !hasVideo || !hasNextVideo();
+
+  const isPaused = !hasVideo || videoPlayer.paused || videoPlayer.ended;
+  playPauseIcon.innerHTML = isPaused ? '&#9654;' : '&#10074;&#10074;';
+  playPauseButton.setAttribute('aria-label', isPaused ? 'Play video' : 'Pause video');
+  playPauseButton.title = isPaused ? 'Play video' : 'Pause video';
+}
+
 function renderPlayer() {
   playerCard.classList.toggle('hidden', !state.currentVideo);
+  renderPlayerControls();
 }
 
 function renderAll() {
@@ -619,55 +748,132 @@ function resetToLibrary() {
   renderAll();
 }
 
+function getResumableTitleResumes() {
+  const resumesByTitle = new Map();
+
+  Object.values(state.progress?.titles || {}).forEach((resume) => {
+    if (isUsefulResume(resume) && resume.titleId) {
+      resumesByTitle.set(resume.titleId, resume);
+    }
+  });
+
+  const last = state.progress?.last;
+  if (isUsefulResume(last) && last.titleId) {
+    resumesByTitle.set(last.titleId, last);
+  }
+
+  return [...resumesByTitle.values()]
+    .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+}
+
+function sortContinueItems(items) {
+  return [...items].sort((a, b) => {
+    const aTime = String(a.resume?.updatedAt || a.progress?.updatedAt || '');
+    const bTime = String(b.resume?.updatedAt || b.progress?.updatedAt || '');
+    return bTime.localeCompare(aTime);
+  });
+}
+
+function setContinueItems(items) {
+  state.continueItems = sortContinueItems(items);
+  state.continueItem = state.continueItems[0] || null;
+}
+
 async function refreshContinueWatching() {
-  const resume = state.progress?.last;
+  const resumes = getResumableTitleResumes();
 
-  if (!isUsefulResume(resume)) {
-    state.continueItem = null;
+  if (!resumes.length) {
+    setContinueItems([]);
     state.continueLoading = false;
     state.continueError = '';
     renderContinueWatching();
     return;
   }
 
-  const progress = getResumeProgress(resume) || resume;
-  if (state.continueItem?.video?.id === resume.videoId) {
-    state.continueItem = {
-      ...state.continueItem,
-      resume,
-      progress
-    };
+  const existingItems = state.continueItems.length
+    ? state.continueItems
+    : state.continueItem ? [state.continueItem] : [];
+  const existingByTitle = new Map(existingItems.map((item) => [item.resume?.titleId, item]));
+  const canReuseItems = resumes.every((resume) => {
+    const item = existingByTitle.get(resume.titleId);
+    return item?.video?.id === resume.videoId;
+  });
+
+  if (canReuseItems) {
+    setContinueItems(resumes.map((resume) => {
+      const item = existingByTitle.get(resume.titleId);
+      return {
+        ...item,
+        resume,
+        progress: getResumeProgress(resume) || resume
+      };
+    }));
     state.continueLoading = false;
     state.continueError = '';
     renderContinueWatching();
     return;
   }
 
-  state.continueItem = null;
+  setContinueItems([]);
   state.continueLoading = true;
   state.continueError = '';
   renderContinueWatching();
 
   try {
-    const data = await fetchJson(withProfile(`/api/videos/${encodeURIComponent(resume.videoId)}`));
-    const latestResume = state.progress?.last;
-    if (latestResume?.videoId !== resume.videoId) return;
+    const loadedItems = await Promise.all(resumes.map(async (resume) => {
+      try {
+        const data = await fetchJson(withProfile(`/api/videos/${encodeURIComponent(resume.videoId)}`));
+        const latestResume = getTitleResume(resume.titleId);
+        if (!isUsefulResume(latestResume) || latestResume.videoId !== resume.videoId) return null;
 
-    state.continueItem = {
-      resume: latestResume,
-      progress: getResumeProgress(latestResume) || latestResume,
-      title: data.title,
-      chapter: data.chapter,
-      video: data.video
-    };
-    state.continueError = '';
-  } catch (_) {
-    state.continueItem = null;
-    state.continueError = 'Saved video could not be found. Refresh the library if files were moved.';
+        return {
+          resume: latestResume,
+          progress: getResumeProgress(latestResume) || latestResume,
+          title: data.title,
+          chapter: data.chapter,
+          video: data.video
+        };
+      } catch (_) {
+        return null;
+      }
+    }));
+    setContinueItems(loadedItems.filter(Boolean));
+    state.continueError = state.continueItems.length
+      ? ''
+      : 'Saved videos could not be found. Refresh the library if files were moved.';
   } finally {
     state.continueLoading = false;
     renderContinueWatching();
   }
+}
+
+function updateContinueItemFromPlayback(resume, progress, title, chapter, video) {
+  if (!resume?.videoId || resume.videoId !== video?.id) return false;
+  const existingItems = state.continueItems.length
+    ? state.continueItems
+    : state.continueItem ? [state.continueItem] : [];
+  if (!isUsefulResume(resume)) {
+    setContinueItems(existingItems.filter((item) => item.resume?.titleId !== resume.titleId));
+    state.continueLoading = false;
+    state.continueError = '';
+    return true;
+  }
+
+  const nextItem = {
+    resume,
+    progress: progress || getResumeProgress(resume) || resume,
+    title,
+    chapter: chapter || null,
+    video: {
+      ...video,
+      progress: progress || video.progress || null
+    }
+  };
+  const otherItems = existingItems.filter((item) => item.resume?.titleId !== resume.titleId);
+  setContinueItems([nextItem, ...otherItems]);
+  state.continueLoading = false;
+  state.continueError = '';
+  return true;
 }
 
 async function loadProfiles() {
@@ -715,7 +921,7 @@ async function selectProfile(profileId) {
     clearPlayback();
   }
   if (changedProfile) {
-    state.continueItem = null;
+    setContinueItems([]);
     state.continueError = '';
   }
 
@@ -893,6 +1099,7 @@ async function saveProgress(force = false, finished = false, overrideTime = null
     state.progress = savedProgress;
 
     const updated = savedProgress?.videos?.[video.id] || null;
+    const resume = savedProgress?.last || null;
     video.progress = updated;
 
     const visibleIndex = state.videos.findIndex((item) => item.id === video.id);
@@ -901,7 +1108,9 @@ async function saveProgress(force = false, finished = false, overrideTime = null
     const playingIndex = state.playingVideos.findIndex((item) => item.id === video.id);
     if (playingIndex >= 0) state.playingVideos[playingIndex].progress = updated;
 
-    await refreshContinueWatching();
+    if (!updateContinueItemFromPlayback(resume, updated, title, chapter, video)) {
+      await refreshContinueWatching();
+    }
     renderAll();
   } catch (error) {
     console.warn('Could not save progress:', error.message);
@@ -922,6 +1131,41 @@ function saveProgressWithBeacon() {
   });
   const blob = new Blob([payload], { type: 'application/json' });
   navigator.sendBeacon('/api/progress', blob);
+}
+
+async function playPreviousVideo() {
+  if (!state.playingTitle || !state.currentVideo) return false;
+
+  const currentVideoIndex = getCurrentPlaybackVideoIndex();
+
+  if (currentVideoIndex > 0) {
+    activatePlaybackContext(
+      state.playingTitle,
+      state.playingChapter,
+      state.playingVideos,
+      state.playingChapters
+    );
+    await openVideo(state.playingVideos[currentVideoIndex - 1], false);
+    return true;
+  }
+
+  if (state.playingTitle.type !== 'series' || !state.playingChapter) return false;
+
+  const currentChapterId = state.playingChapter.id;
+  const currentChapterIndex = state.playingChapters.findIndex((chapter) => chapter.id === currentChapterId);
+  if (currentChapterIndex < 0) return false;
+
+  activatePlaybackContext(state.playingTitle, state.playingChapter, state.playingVideos, state.playingChapters);
+
+  for (const previousChapter of state.playingChapters.slice(0, currentChapterIndex).reverse()) {
+    await selectChapter(previousChapter.id);
+    if (state.videos.length > 0) {
+      await openVideo(state.videos[state.videos.length - 1], false);
+      return true;
+    }
+  }
+
+  return false;
 }
 
 async function playNextVideo() {
@@ -960,11 +1204,38 @@ async function playNextVideo() {
   return false;
 }
 
+async function playAdjacentVideo(direction) {
+  if (!state.currentVideo) return;
+  await saveProgress(true, false);
+  const didStartVideo = direction < 0 ? await playPreviousVideo() : await playNextVideo();
+  if (!didStartVideo) {
+    playbackMeta.textContent = direction < 0 ? 'No previous video found.' : 'No next video found.';
+    renderPlayerControls();
+  }
+}
+
+async function togglePlayPause() {
+  if (!state.currentVideo) return;
+
+  if (videoPlayer.paused || videoPlayer.ended) {
+    try {
+      await videoPlayer.play();
+    } catch (_) {
+      // Browser playback rules can still require using the native player controls.
+    }
+  } else {
+    videoPlayer.pause();
+  }
+
+  renderPlayerControls();
+}
+
 async function handleVideoEnded() {
   await saveProgress(true, true);
   const didStartNextVideo = await playNextVideo();
   if (!didStartNextVideo) {
     playbackMeta.textContent = 'Finished. No next video found.';
+    renderPlayerControls();
   }
 }
 
@@ -1008,6 +1279,55 @@ async function resumeTitle(titleId) {
 
   showStatus('');
   await openVideo(video, true);
+}
+
+async function resumeContinueWatching(item = state.continueItem) {
+  const resume = item?.resume;
+  if (!resume?.titleId) return;
+
+  if (item.title?.id === resume.titleId && item.video?.id === resume.videoId) {
+    const existingChapters = state.currentTitle?.id === item.title.id ? state.chapters : [];
+    const existingVideos = state.currentChapter?.id === item.chapter?.id || item.title.type === 'movie'
+      ? state.videos
+      : [];
+    const videos = existingVideos.some((video) => video.id === item.video.id) ? existingVideos : [item.video];
+    const chapters = existingChapters.length ? existingChapters : (item.chapter ? [item.chapter] : []);
+
+    activatePlaybackContext(item.title, item.chapter || null, videos, chapters);
+    showStatus('');
+    await openVideo(item.video, true);
+    hydratePlaybackContextForContinue(item);
+    return;
+  }
+
+  await resumeTitle(resume.titleId);
+}
+
+async function hydratePlaybackContextForContinue(item) {
+  const videoId = item?.video?.id;
+  const titleId = item?.title?.id;
+  if (!videoId || !titleId || state.playingVideos.length > 1 || state.playingChapters.length > 1) return;
+
+  try {
+    await selectTitle(titleId);
+    if (!state.currentVideo || state.currentVideo.id !== videoId) return;
+
+    if (state.currentTitle?.type === 'series' && item.chapter?.id) {
+      await selectChapter(item.chapter.id);
+      if (!state.currentVideo || state.currentVideo.id !== videoId) return;
+    }
+
+    const queuedVideo = state.videos.find((video) => video.id === videoId) || state.currentVideo;
+    state.currentVideo = queuedVideo;
+    state.playingTitle = state.currentTitle;
+    state.playingChapter = state.currentTitle?.type === 'series' ? state.currentChapter : null;
+    state.playingVideos = state.videos.length ? [...state.videos] : [queuedVideo];
+    state.playingChapters = [...state.chapters];
+    renderAll();
+  } catch (error) {
+    console.warn('Could not load adjacent videos:', error.message);
+    renderPlayerControls();
+  }
 }
 
 function goBack() {
@@ -1085,10 +1405,23 @@ sidebarList.addEventListener('click', (event) => {
   selectTitle(titleButton.dataset.titleId);
 });
 
-continueWatching.addEventListener('click', (event) => {
+continueWatching.addEventListener('click', async (event) => {
   const continueButton = event.target.closest('[data-continue-watch]');
-  if (!continueButton || !state.continueItem?.resume?.titleId) return;
-  resumeTitle(state.continueItem.resume.titleId);
+  const titleId = continueButton?.dataset.continueTitleId;
+  const item = state.continueItems.find((entry) => entry.resume?.titleId === titleId) || state.continueItem;
+  if (!continueButton || !item?.resume?.titleId) return;
+  continueButton.disabled = true;
+  unloadContinueThumbnail();
+  showStatus('Opening saved video...');
+  try {
+    await resumeContinueWatching(item);
+  } catch (error) {
+    showStatus(error.message || 'Could not open saved video.', true);
+  } finally {
+    if (!state.currentVideo && continueButton.isConnected) {
+      continueButton.disabled = false;
+    }
+  }
 });
 
 profileList.addEventListener('click', (event) => {
@@ -1120,9 +1453,14 @@ homeButton.addEventListener('click', () => {
   renderAll();
 });
 
-libraryToggleButton.addEventListener('click', () => {
-  state.sidebarOpen = !state.sidebarOpen;
-  renderSidebar();
+libraryToggleButton.addEventListener('click', async () => {
+  if (state.sidebarOpen) {
+    state.sidebarOpen = false;
+    renderSidebar();
+    return;
+  }
+
+  await openLibraryFocusedOnPlayingEpisode();
 });
 
 backButton.addEventListener('click', goBack);
@@ -1132,10 +1470,18 @@ titleResumeButton.addEventListener('click', () => {
   resumeTitle(state.currentTitle.id);
 });
 
+previousButton.addEventListener('click', () => playAdjacentVideo(-1));
+playPauseButton.addEventListener('click', togglePlayPause);
+nextButton.addEventListener('click', () => playAdjacentVideo(1));
+
 refreshButton.addEventListener('click', loadLibrary);
 
 videoPlayer.addEventListener('timeupdate', () => saveProgress(false, false));
-videoPlayer.addEventListener('pause', () => saveProgress(true, false));
+videoPlayer.addEventListener('play', renderPlayerControls);
+videoPlayer.addEventListener('pause', () => {
+  saveProgress(true, false);
+  renderPlayerControls();
+});
 videoPlayer.addEventListener('ended', handleVideoEnded);
 window.addEventListener('beforeunload', saveProgressWithBeacon);
 

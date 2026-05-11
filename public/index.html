@@ -58,6 +58,17 @@
           <div id="playbackMeta" class="playback-meta"></div>
         </div>
         <video id="videoPlayer" controls preload="metadata" playsinline></video>
+        <div id="playerControls" class="player-controls" aria-label="Playback controls">
+          <button id="previousButton" class="player-control" type="button" aria-label="Previous video" title="Previous video">
+            <span aria-hidden="true">&#9664;&#9664;</span>
+          </button>
+          <button id="playPauseButton" class="player-control primary" type="button" aria-label="Pause video" title="Pause video">
+            <span id="playPauseIcon" aria-hidden="true">&#10074;&#10074;</span>
+          </button>
+          <button id="nextButton" class="player-control" type="button" aria-label="Next video" title="Next video">
+            <span aria-hidden="true">&#9654;&#9654;</span>
+          </button>
+        </div>
       </div>
 
       <div id="browserCard" class="browser-card hidden">

@@ -592,6 +592,12 @@ async function getVideoInfo(videoId) {
   };
 }
 
+function pipeMediaStream(videoPath, res, options = {}) {
+  const stream = fs.createReadStream(videoPath, options);
+  res.on('close', () => stream.destroy());
+  stream.pipe(res);
+}
+
 function addProgressToVideos(videos, progress) {
   return videos.map((video) => ({
     ...video,
@@ -866,7 +872,7 @@ app.get('/media/:videoId', async (req, res, next) => {
 
     if (!range) {
       res.setHeader('Content-Length', fileSize);
-      fs.createReadStream(videoPath).pipe(res);
+      pipeMediaStream(videoPath, res);
       return;
     }
 
@@ -887,7 +893,7 @@ app.get('/media/:videoId', async (req, res, next) => {
       'Content-Type': contentType,
       'Accept-Ranges': 'bytes'
     });
-    fs.createReadStream(videoPath, { start, end }).pipe(res);
+    pipeMediaStream(videoPath, res, { start, end });
   } catch (error) {
     next(error);
   }
