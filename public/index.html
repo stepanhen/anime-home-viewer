@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Anime Home Viewer</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-left">
+      <button id="homeButton" class="home-button primary" type="button">Home</button>
+    </div>
+    <button id="profileButton" class="profile-button hidden" type="button">
+      <span id="profileButtonAvatar" class="profile-avatar">?</span>
+      <span id="profileButtonName">Profile</span>
+    </button>
+  </header>
+
+  <div id="status" class="status hidden"></div>
+
+  <section id="profileGate" class="profile-gate" role="dialog" aria-modal="true" aria-labelledby="profileGateHeading">
+    <div class="profile-panel">
+      <div class="section-title">Profiles</div>
+      <h2 id="profileGateHeading">Who's watching?</h2>
+      <div id="profileList" class="profile-list"></div>
+      <form id="profileForm" class="profile-form">
+        <input id="profileNameInput" type="text" name="name" maxlength="32" autocomplete="off" placeholder="New profile">
+        <button class="primary" type="submit">Create</button>
+      </form>
+    </div>
+  </section>
+
+  <main id="appLayout" class="layout app-layout">
+    <aside id="librarySidebar" class="library-sidebar">
+      <div class="sidebar-heading">
+        <button id="libraryToggleButton" class="menu-toggle" type="button" aria-controls="sidebarList" aria-expanded="true">
+          <span>Library</span>
+          <span class="menu-chevron" aria-hidden="true">&#9662;</span>
+        </button>
+        <button id="refreshButton" class="secondary" type="button">Refresh</button>
+      </div>
+      <div id="sidebarList" class="sidebar-list empty-state">Choose a profile.</div>
+    </aside>
+
+    <section class="content">
+      <section id="continueSection" class="continue-card">
+        <div class="section-title">Continue Watching</div>
+        <div id="continueWatching" class="continue-watch empty-state">Choose a profile.</div>
+      </section>
+
+      <div id="playerCard" class="player-card hidden">
+        <div class="player-heading">
+          <div>
+            <div class="section-title">Player</div>
+            <h2 id="nowPlaying">Select a video</h2>
+          </div>
+          <div id="playbackMeta" class="playback-meta"></div>
+        </div>
+        <video id="videoPlayer" controls preload="metadata" playsinline></video>
+      </div>
+
+      <div id="browserCard" class="browser-card hidden">
+        <div class="browser-heading">
+          <div class="browser-title-row">
+            <button id="backButton" class="back-button hidden" type="button" aria-label="Back">&larr;</button>
+            <div>
+              <div id="browserSectionTitle" class="section-title">Library</div>
+              <h2 id="browserHeading">Library</h2>
+              <p id="browserSubheading" class="browser-subheading"></p>
+            </div>
+          </div>
+
+          <div class="heading-actions">
+            <button id="titleResumeButton" class="primary hidden" type="button">Resume</button>
+          </div>
+        </div>
+
+        <div id="browserList" class="browser-list empty-state">Loading library...</div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>

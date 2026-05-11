@@ -1,0 +1,4 @@
+{
+  "mediaRoot": "/path/to/your/video/library",
+  "port": 3000
+}
