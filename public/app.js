@@ -164,7 +164,6 @@ function hideProfileGate() {
 function clearPlayback() {
   videoPlayer.pause();
   videoPlayer.removeAttribute('src');
-  videoPlayer.load();
 
   state.currentVideo = null;
   state.playingTitle = null;
@@ -538,6 +537,10 @@ function renderVideoButtons(videos, emptyMessage) {
 }
 
 function renderContinueWatching() {
+  if (state.currentVideo) {
+    continueSection.classList.add('hidden');
+    return;
+  }
   continueSection.classList.remove('hidden');
 
   if (!state.currentProfile) {
@@ -1029,9 +1032,16 @@ browserList.addEventListener('click', (event) => {
 
   const chapterButton = event.target.closest('[data-chapter-id]');
   if (chapterButton) {
-    selectChapter(chapterButton.dataset.chapterId);
+  // Toggle: if already open, close it
+  if (state.currentChapter && state.currentChapter.id === chapterButton.dataset.chapterId) {
+    state.currentChapter = null;
+    state.videos = [];
+    renderAll();
     return;
   }
+  selectChapter(chapterButton.dataset.chapterId);
+  return;
+}
 
   const videoButton = event.target.closest('[data-video-id]');
   if (videoButton) {
@@ -1050,12 +1060,28 @@ sidebarList.addEventListener('click', (event) => {
 
   const chapterButton = event.target.closest('[data-chapter-id]');
   if (chapterButton) {
-    selectChapter(chapterButton.dataset.chapterId);
+  // Toggle: if already open, close it
+  if (state.currentChapter && state.currentChapter.id === chapterButton.dataset.chapterId) {
+    state.currentChapter = null;
+    state.videos = [];
+    renderAll();
     return;
   }
+  selectChapter(chapterButton.dataset.chapterId);
+  return;
+}
 
   const titleButton = event.target.closest('[data-title-id]');
   if (!titleButton) return;
+  // Toggle: if already open, close it
+  if (state.currentTitle && state.currentTitle.id === titleButton.dataset.titleId) {
+    state.currentTitle = null;
+    state.currentChapter = null;
+    state.chapters = [];
+    state.videos = [];
+    renderAll();
+    return;
+  }
   selectTitle(titleButton.dataset.titleId);
 });
 
@@ -1082,7 +1108,16 @@ profileButton.addEventListener('click', async () => {
 });
 
 homeButton.addEventListener('click', () => {
-  resetToLibrary();
+  clearPlayback();           // stops video, clears player state
+  state.view = 'library';
+  state.currentTitle = null; // collapses any open title
+  state.currentChapter = null;
+  state.chapters = [];
+  state.videos = [];
+  state.loadingTitleId = null;
+  state.loadingChapterId = null;
+  state.sidebarOpen = false; // collapses the library sidebar
+  renderAll();
 });
 
 libraryToggleButton.addEventListener('click', () => {
